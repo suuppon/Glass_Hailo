@@ -6,3 +6,4 @@ pytest-timeout
 pytest-mock
 python-dotenv
 onnxruntime
+scikit-image

@@ -163,3 +163,13 @@ resources/*.hef
 resources/*.so
 
 ckpt/
+data/
+
+*.onnx
+*.hef
+*.har
+*.onnx.data
+
+venv_hailo_rpi_examples/
+resources/
+hailo_temp_resources/

@@ -3,7 +3,7 @@ set -e
 
 # --- Defaults ---
 BASE_URL="http://dev-public.hailo.ai/2025_01"
-HAILORT_VERSION="4.23.0"
+HAILORT_VERSION="4.20.0"
 TAPPAS_CORE_VERSION="3.31.0"
 DOWNLOAD_DIR="hailo_temp_resources"
 

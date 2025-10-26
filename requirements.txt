@@ -5,3 +5,4 @@ pytest
 pytest-timeout
 pytest-mock
 python-dotenv
+onnxruntime

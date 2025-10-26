@@ -76,7 +76,7 @@ fi
 # —————————————————————————————
 : "${server_url:=http://dev-public.hailo.ai/2025_01}"
 : "${storage_dir:=hailo_temp_resources}"
-: "${hailort_version:=4.23.0}"
+: "${hailort_version:=4.20.0}"
 : "${tappas_version:=3.31.0}"
 : "${virtual_env_name:="hailo_venv"}"
 : "${hailo_apps_infra_repo_url:=https://github.com/hailo-ai/hailo-apps-infra.git}"

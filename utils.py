@@ -5,7 +5,7 @@ import logging
 import os
 import random
 import shutil
-from typing import Iterable, List, Optional, Sequence
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -13,27 +13,16 @@ import numpy as np
 LOGGER = logging.getLogger(__name__)
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
+IMAGENET_STD  = [0.229, 0.224, 0.225]
 
 
-# --------------------------- Device / Seeds (no torch) ---------------------------
+# --------------------------- Seeds (no torch) ---------------------------
 
-def set_torch_device(gpu_ids: Sequence[int] | tuple[int, ...] | list[int]) -> str:
-    """
-    Torch 미사용 호환용 더미 함수.
-    기존 코드와의 시그니처 호환을 위해 유지하되 항상 'cpu' 문자열을 반환.
-    """
-    return "cpu"
-
-
-def fix_seeds(seed: int, with_torch: bool = True, with_cuda: bool = True) -> None:
-    """
-    재현성 고정 (NumPy/표준 random만 사용).
-    torch 미사용 환경을 위해 torch 관련 부분 제거.
-    """
+def fix_seeds(seed: int, with_torch: bool = False, with_cuda: bool = False) -> None:
+    """Fixed seeds for reproducibility (NumPy + Python)."""
     random.seed(seed)
     np.random.seed(seed)
-    # torch 관련 동작은 의도적으로 제거 (미사용)
+    # placeholders keep signature compatibility; no torch usage.
 
 
 # --------------------------- FS Helpers ---------------------------
@@ -45,15 +34,11 @@ def create_storage_folder(
     run_name: str,
     mode: str = "iterate",
 ) -> str:
-    """
-    Create/prepare a storage root. (현재 레포에선 단순 루트만 보장)
-    """
     os.makedirs(main_folder_path, exist_ok=True)
     return main_folder_path
 
 
 def del_remake_dir(path: str, del_flag: bool = True) -> None:
-    """Delete and remake directory (or just make if not exists)."""
     if os.path.exists(path):
         if del_flag:
             shutil.rmtree(path, ignore_errors=True)
@@ -66,42 +51,30 @@ def del_remake_dir(path: str, del_flag: bool = True) -> None:
 
 def torch_format_2_numpy_img(img: np.ndarray) -> np.ndarray:
     """
-    CHW(torch-like) -> HWC(BGR uint8)
-    - 3채널이면 ImageNet 정규화 복원 + RGB->BGR 변환
-    - 1채널/기타는 3채널 반복
-    * PyTorch 미사용. 입력은 단순 NumPy 배열(CHW)로 가정.
+    CHW-like -> HWC(BGR uint8)
+    - If 3 channels: unnormalize ImageNet + RGB->BGR.
+    - Else: repeat to 3 channels.
     """
-    if img.ndim != 3:
-        raise ValueError("Expected CHW ndarray.")
-
     if img.shape[0] == 3:
-        img = img.transpose(1, 2, 0)  # CHW -> HWC
+        img = img.transpose(1, 2, 0)
         img = img * np.array(IMAGENET_STD, dtype=np.float32) + np.array(IMAGENET_MEAN, dtype=np.float32)
-        img = np.clip(img, 0.0, 1.0)
-        img = (img * 255.0).astype(np.uint8)
-        # RGB -> BGR
-        img = img[:, :, ::-1]
+        img = img[:, :, [2, 1, 0]]  # RGB -> BGR
+        img = (img * 255).astype("uint8")
     else:
         img = img.transpose(1, 2, 0)
         img = np.repeat(img, 3, axis=-1)
-        img = np.clip(img, 0.0, 1.0)
-        img = (img * 255.0).astype(np.uint8)
+        img = (img * 255).astype("uint8")
     return img
 
 
 def distribution_judge(img: np.ndarray, name: str) -> int:
-    """
-    Judge the distribution of specific category by FFT pattern.
-    Returns:
-        1 (HyperSphere) or 0 (Manifold)
-    """
     img_ = cv2.resize(img, (289, 289))
     gray = cv2.cvtColor(img_, cv2.COLOR_BGR2GRAY)
     gray = cv2.blur(gray, (39, 39))
 
     dft = cv2.dft(np.float32(gray), flags=cv2.DFT_COMPLEX_OUTPUT)
     dft_shift = np.fft.fftshift(dft)
-    magnitude = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]) + 1e-12)
+    magnitude = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]))
     magnitude[magnitude > 170] = 255
     magnitude[magnitude <= 170] = 0
 
@@ -142,31 +115,14 @@ def compute_and_store_final_results(
     column_names: List[str],
     row_names: Optional[List[str]] = None,
     filename: str = "results.csv",
-    mode: str = "auto",  # "auto" | "append" | "overwrite"
+    mode: str = "auto",
 ) -> dict:
-    """
-    Store/append results to a CSV and keep a running Mean row.
-
-    Args:
-        results_path: directory to save csv
-        results: List of rows, e.g. [[i_auc, i_ap, p_auc, p_ap, p_pro, latency, fps], ...]
-        column_names: e.g. ["image_auroc","image_ap","pixel_auroc","pixel_ap","pixel_pro","latency_sec","fps"]
-        row_names: optional row names (same length as 'results')
-        filename: csv file name
-        mode:
-          - "auto"     : append if header matches; otherwise overwrite
-          - "append"   : force append (header mismatch -> overwrite)
-          - "overwrite": always overwrite
-    Returns:
-        dict of mean_{col}: value
-    """
     if row_names is not None:
         assert len(row_names) == len(results), "#Rownames != #Result-rows."
 
     os.makedirs(results_path, exist_ok=True)
     savename = os.path.join(results_path, filename)
 
-    # load existing (drop trailing Mean)
     existing_rows: list[list[str]] = []
     existing_header: Optional[list[str]] = None
     if os.path.exists(savename) and mode in ("auto", "append"):
@@ -179,7 +135,6 @@ def compute_and_store_final_results(
                 body = body[:-1]
             existing_rows = body
 
-    # header
     header = column_names[:]
     use_row_names = row_names is not None or (
         existing_header is not None and len(existing_header) > 0 and existing_header[0].strip().lower() == "row names"
@@ -192,7 +147,6 @@ def compute_and_store_final_results(
 
     overwrite = (mode == "overwrite") or (existing_header is None) or (_norm(existing_header) != _norm(header))
 
-    # rows to write
     rows_to_write: list[list[str | float]] = []
     if not overwrite:
         rows_to_write.extend(existing_rows)
@@ -202,13 +156,11 @@ def compute_and_store_final_results(
         row = [row_name] + list(res) if use_row_names else list(res)
         rows_to_write.append(row)
 
-    # mean
     data_only = [r[1:] if use_row_names else r for r in rows_to_write]
-    data_arr = np.array([[_to_float(x) for x in r] for r in data_only], dtype=float)
+    data_arr = np.array([[ _to_float(x) for x in r ] for r in data_only], dtype=float)
     col_means = np.nanmean(data_arr, axis=0).tolist()
     mean_row = (["Mean"] + col_means) if use_row_names else col_means
 
-    # write
     with open(savename, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(header)
